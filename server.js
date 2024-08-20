@@ -42,76 +42,71 @@ function isAuthenticated(req, res, next) {
 
 // Dashboard route
 app.get('/dashboard', isAuthenticated, async (req, res) => {
-  const vpsList = await VPS.find({ owner: req.user._id });
-  res.render('dashboard', { user: req.user, vpsList });
+  try {
+    const vpsList = await VPS.find({ owner: req.user._id });
+    res.render('dashboard', { user: req.user, vpsList });
+  } catch (error) {
+    console.error('Error fetching VPS list:', error);
+    res.redirect('/dashboard?error=1');
+  }
 });
 
 // Route to create a new VPS container
 app.post('/vps/create', isAuthenticated, async (req, res) => {
-  const { name, image } = req.body;
-  const container = await dockerManager.createContainer(image, name);
-  const vps = new VPS({
-    name,
-    image,
-    owner: req.user._id,
-    containerId: container.id,
-  });
-  await vps.save();
-  res.redirect('/dashboard');
+  const { name, os } = req.body;
+
+  let image;
+  if (os === 'alpine') {
+    image = 'alpine:latest';
+  } else {
+    // Default to a placeholder image or another image as needed
+    image = 'default-image:latest';
+  }
+
+  try {
+    // Create the container using the selected image
+    const container = os === 'alpine' 
+      ? await dockerManager.createAlpineContainer(name)
+      : await dockerManager.createContainer(image, name);
+    
+    // Save VPS details in the database
+    const vps = new VPS({
+      name,
+      os, // Store the OS for display
+      image,
+      owner: req.user._id,
+      containerId: container.id
+    });
+    await vps.save();
+
+    res.redirect('/dashboard');
+  } catch (error) {
+    console.error('Error creating VPS:', error);
+    res.redirect('/dashboard?error=1');
+  }
 });
 
 // Route to remove a VPS container
 app.post('/vps/remove', isAuthenticated, async (req, res) => {
   const { vpsId } = req.body;
-  const vps = await VPS.findById(vpsId);
-  await dockerManager.stopAndRemoveContainer(vps.containerId);
-  await vps.remove();
-  res.redirect('/dashboard');
+
+  try {
+    const vps = await VPS.findById(vpsId);
+    if (!vps) {
+      throw new Error('VPS not found');
+    }
+    await dockerManager.stopAndRemoveContainer(vps.containerId);
+    await vps.remove();
+    res.redirect('/dashboard');
+  } catch (error) {
+    console.error('Error removing VPS:', error);
+    res.redirect('/dashboard?error=1');
+  }
 });
 
 app.get('/', (req, res) => {
   res.render('index', { user: req.user });
 });
-
-router.post('/vps/create', async (req, res) => {
-  const { name, os } = req.body;
-
-  // Translate the selected OS into a Docker image
-  let image;
-  if (os === 'alpine') {
-      image = 'alpine:latest';
-  }
-
-  try {
-      // Create a new Docker container
-      const container = await docker.createContainer({
-          Image: image,
-          Cmd: ['/bin/sh'],  // Command to run inside the container
-          name: name,
-          Tty: true
-      });
-
-      // Start the container
-      await container.start();
-
-      // Save VPS details in the database
-      const vps = new VPS({
-          name,
-          image,
-          userId: req.user._id,
-          containerId: container.id // Store the Docker container ID
-      });
-      await vps.save();
-
-      res.redirect('/dashboard');
-  } catch (error) {
-      console.error('Error creating VPS:', error);
-      res.redirect('/dashboard?error=1');
-  }
-});
-
-module.exports = router;
-
 
 app.listen(3000, () => {
   console.log('Server running on http://localhost:3000');

@@ -139,14 +139,9 @@ async function attachTerminal(containerId, socket) {
       // Handle input from the web client
       socket.on('terminal-input', (input) => {
         if (stream.stdin) {
-          const writableStream = new Writable({
-            write(chunk, encoding, callback) {
-              stream.stdin.write(chunk);
-              callback();
-            }
+          stream.pipeline(input, stream.stdin, (err) => {
+            if (err) console.error(err);
           });
-          writableStream.write(input);
-          writableStream.end();
         } else {
           console.error('stdin does not support writing');
         }

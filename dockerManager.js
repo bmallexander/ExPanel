@@ -123,26 +123,30 @@ async function attachTerminal(containerId, socket) {
       Tty: true,
     });
 
-    const { stdin, stdout, stderr } = await exec.start({ Detach: false });
+    const stream = await exec.start({ Detach: false });
 
-    if (stdin && stdout) {
-      stdout.on('data', (data) => {
+    // Ensure the stream supports writing
+    if (stream.stdin && typeof stream.stdin.write === 'function') {
+      // Pipe data from the container to the socket
+      stream.stdout.on('data', (data) => {
         socket.emit('terminal-output', data.toString());
       });
-      stderr.on('data', (data) => {
+
+      stream.stderr.on('data', (data) => {
         socket.emit('terminal-output', data.toString());
       });
 
+      // Handle input from the web client
       socket.on('terminal-input', (input) => {
-        if (stdin && typeof stdin.write === 'function') {
-          stdin.write(input);
+        if (stream.stdin && typeof stream.stdin.write === 'function') {
+          stream.stdin.write(input);
         } else {
           console.error('stdin does not support writing');
         }
       });
 
       socket.on('disconnect', () => {
-        if (stdin) stdin.end();
+        if (stream.stdin) stream.stdin.end();
       });
     } else {
       console.error('stdin or stdout is not available');
@@ -152,6 +156,7 @@ async function attachTerminal(containerId, socket) {
     throw error;
   }
 }
+
 
 // Function to execute a command in a container
 async function executeCommand(containerId, command) {

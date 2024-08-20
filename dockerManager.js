@@ -122,30 +122,25 @@ async function attachTerminal(containerId, socket) {
       Tty: true,
     });
 
-    const stream = await exec.start({ Detach: false, Tty: true });
+    const { stdin, stdout, stderr } = await exec.start({ Detach: false, Tty: true });
 
-    // Ensure the stream supports stdin and stdout
-    if (stream && typeof stream.stdout === 'object' && typeof stream.stderr === 'object') {
-      // Pipe data from the container to the socket
-      stream.stdout.on('data', (data) => {
-        socket.emit('terminal-output', data.toString());
-      });
+    // Pipe data from the container to the socket
+    stdout.on('data', (data) => {
+      socket.emit('terminal-output', data.toString());
+    });
 
-      stream.stderr.on('data', (data) => {
-        socket.emit('terminal-output', data.toString());
-      });
+    stderr.on('data', (data) => {
+      socket.emit('terminal-output', data.toString());
+    });
 
-      // Handle input from the web client
-      socket.on('terminal-input', (input) => {
-        stream.stdin.write(input);
-      });
+    // Handle input from the web client
+    socket.on('terminal-input', (input) => {
+      stdin.write(input);
+    });
 
-      socket.on('disconnect', () => {
-        stream.stdin.end();
-      });
-    } else {
-      console.error('Stream or stdin/stdout is not available');
-    }
+    socket.on('disconnect', () => {
+      stdin.end();
+    });
   } catch (error) {
     console.error('Error attaching terminal:', error);
     throw error;

@@ -1,6 +1,6 @@
 const Docker = require('dockerode');
 const docker = new Docker();
-const { PassThrough } = require('stream');
+const { Writable } = require('stream');
 
 // List all containers
 async function listContainers() {
@@ -138,8 +138,14 @@ async function attachTerminal(containerId, socket) {
 
       // Handle input from the web client
       socket.on('terminal-input', (input) => {
-        if (stream.stdin && typeof stream.stdin.write === 'function') {
-          stream.stdin.write(input);
+        if (stream.stdin) {
+          const writableStream = new Writable({
+            write(chunk, encoding, callback) {
+              stream.stdin.write(chunk);
+              callback();
+            }
+          });
+          writableStream.write(input);
         } else {
           console.error('stdin does not support writing');
         }

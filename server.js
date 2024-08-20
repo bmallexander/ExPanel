@@ -31,7 +31,7 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Consolidated WebSocket connection handler
+// WebSocket connection handler
 io.on('connection', (socket) => {
   console.log('New client connected');
 
@@ -63,16 +63,21 @@ io.on('connection', (socket) => {
 
         // Handle client input
         socket.on('terminal-input', (data) => {
-          if (stream.write) {
-            stream.write(data);
+          if (stream.stdin) {
+            stream.stdin.write(data);
           } else {
-            console.error('Stream does not support writing');
+            console.error('Stream stdin is not available');
           }
         });
 
         // Handle end of stream
         stream.on('end', () => {
           console.log('Exec stream ended');
+        });
+
+        // Handle stream errors
+        stream.on('error', (err) => {
+          console.error('Stream error:', err);
         });
       });
     } catch (error) {
@@ -115,7 +120,7 @@ app.post('/vps/create', isAuthenticated, async (req, res) => {
   if (os === 'alpine') {
     image = 'alpine:latest';
   } else {
-    image = 'default-image:latest'; // Or another suitable default image
+    image = 'alpine:latest'; // Or another suitable default image
   }
 
   try {
@@ -209,8 +214,6 @@ app.post('/vps/:id/run-command', isAuthenticated, async (req, res) => {
 app.get('/', (req, res) => {
   res.render('index', { user: req.user });
 });
-
-//app.use('/');
 
 server.listen(3000, () => {
   console.log('Server running on http://localhost:3000');

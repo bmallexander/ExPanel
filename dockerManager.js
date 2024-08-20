@@ -93,22 +93,18 @@ async function attachTerminal(containerId, socket) {
       Tty: true
     });
 
-    execInstance.start({ Detach: false }, (err, stream) => {
+    execInstance.start({
+      Detach: false,
+      stdout: true,
+      stderr: true
+    }, (err, stdout, stderr) => {
       if (err) {
         console.error('Error starting exec instance:', err);
         socket.emit('terminal-error', 'Failed to start exec instance');
         return;
       }
 
-      if (!stream) {
-        console.error('No stream returned from exec start');
-        socket.emit('terminal-error', 'Stream not available');
-        return;
-      }
-
-      const { stdin, stdout, stderr } = stream;
-
-      if (!stdin || !stdout || !stderr) {
+      if (!stdout || !stderr) {
         console.error('One or more streams are missing');
         socket.emit('terminal-error', 'Stream components are missing');
         return;
@@ -134,22 +130,13 @@ async function attachTerminal(containerId, socket) {
 
       // Handle client input
       socket.on('terminal-input', (data) => {
-        if (stdin) {
-          stdin.write(data);
-        } else {
-          console.error('stdin is not available');
-        }
+        execInstance.stdin.write(data);
       });
 
       // Handle socket disconnection
       socket.on('disconnect', () => {
         console.log('Client disconnected');
-        if (stdin) {
-          stdin.end(); // Properly close stdin
-        }
-        if (stream) {
-          stream.destroy(); // Close the stream
-        }
+        execInstance.stdin.end(); // Properly close stdin
       });
     });
   } catch (error) {

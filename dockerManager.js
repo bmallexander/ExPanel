@@ -90,14 +90,18 @@ async function runCommandInContainer(containerId, command) {
     });
 
     const { Stdout, Stderr } = await exec.start();
-    let output = '';
 
-    Stdout.on('data', chunk => output += chunk.toString());
-    Stderr.on('data', chunk => output += chunk.toString());
+    let output = '';
+    if (Stdout) {
+      Stdout.on('data', chunk => output += chunk.toString());
+    }
+    if (Stderr) {
+      Stderr.on('data', chunk => output += chunk.toString());
+    }
 
     await new Promise((resolve, reject) => {
-      Stdout.on('end', resolve);
-      Stderr.on('end', resolve);
+      if (Stdout) Stdout.on('end', resolve);
+      if (Stderr) Stderr.on('end', resolve);
     });
 
     return output;
@@ -119,24 +123,30 @@ async function attachTerminal(containerId, socket) {
       Tty: true,
     });
 
-    const { stdin, stdout, stderr } = await exec.start();
+    const { stdin, stdout, stderr } = await exec.start({ Detach: false });
 
-    // Pipe data from the container to the socket
-    stdout.on('data', (data) => {
-      socket.emit('terminal-output', data.toString());
-    });
-    stderr.on('data', (data) => {
-      socket.emit('terminal-output', data.toString());
-    });
+    if (stdin && stdout) {
+      stdout.on('data', (data) => {
+        socket.emit('terminal-output', data.toString());
+      });
+      stderr.on('data', (data) => {
+        socket.emit('terminal-output', data.toString());
+      });
 
-    // Handle input from the web client
-    socket.on('terminal-input', (input) => {
-      stdin.write(input);
-    });
+      socket.on('terminal-input', (input) => {
+        if (stdin && typeof stdin.write === 'function') {
+          stdin.write(input);
+        } else {
+          console.error('stdin does not support writing');
+        }
+      });
 
-    socket.on('disconnect', () => {
-      stdin.end();
-    });
+      socket.on('disconnect', () => {
+        if (stdin) stdin.end();
+      });
+    } else {
+      console.error('stdin or stdout is not available');
+    }
   } catch (error) {
     console.error('Error attaching terminal:', error);
     throw error;

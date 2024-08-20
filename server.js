@@ -40,6 +40,7 @@ io.on('connection', (socket) => {
       const vps = await VPS.findById(vpsId);
       const container = dockerManager.getContainer(vps.containerId);
 
+      // Create an exec instance
       const exec = await container.exec({
         Cmd: ['sh'],
         AttachStdin: true,
@@ -48,21 +49,28 @@ io.on('connection', (socket) => {
         Tty: true
       });
 
-      exec.start((err, stream) => {
+      // Start the exec instance
+      exec.start({Detach: false}, (err, stream) => {
         if (err) {
           console.error('Error starting exec:', err);
           return;
         }
 
+        // Forward terminal output to the client
         stream.on('data', (data) => {
           socket.emit('terminal-output', data.toString());
         });
 
+        // Handle client input
         socket.on('terminal-input', (data) => {
-          // Send input to the container
-          stream.write(data);
+          if (stream.write) {
+            stream.write(data);
+          } else {
+            console.error('Stream does not support writing');
+          }
         });
 
+        // Handle end of stream
         stream.on('end', () => {
           console.log('Exec stream ended');
         });

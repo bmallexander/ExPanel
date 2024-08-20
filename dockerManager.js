@@ -125,8 +125,8 @@ async function attachTerminal(containerId, socket) {
 
     const stream = await exec.start({ Detach: false });
 
-    // Ensure the stream supports writing
-    if (stream.stdin && typeof stream.stdin.write === 'function') {
+    // Check if the stream has stdin
+    if (stream.stdin) {
       // Pipe data from the container to the socket
       stream.stdout.on('data', (data) => {
         socket.emit('terminal-output', data.toString());
@@ -149,7 +149,7 @@ async function attachTerminal(containerId, socket) {
         if (stream.stdin) stream.stdin.end();
       });
     } else {
-      console.error('stdin or stdout is not available');
+      console.error('stdin is not available on the stream');
     }
   } catch (error) {
     console.error('Error attaching terminal:', error);

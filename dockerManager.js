@@ -1,5 +1,6 @@
 const Docker = require('dockerode');
 const docker = new Docker();
+const { PassThrough } = require('stream');
 
 // List all containers
 async function listContainers() {
@@ -96,11 +97,47 @@ async function runCommandInContainer(containerId, command) {
   }
 }
 
+// Attach a terminal to a container
+async function attachTerminal(containerId, socket) {
+  try {
+    const container = docker.getContainer(containerId);
+    const exec = await container.exec({
+      Cmd: ['sh'],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true,
+    });
+
+    const { stdin, stdout, stderr } = await exec.start();
+
+    // Pipe data from the container to the socket
+    stdout.on('data', (data) => {
+      socket.emit('terminal-output', data.toString());
+    });
+    stderr.on('data', (data) => {
+      socket.emit('terminal-output', data.toString());
+    });
+
+    // Handle input from the web client
+    socket.on('terminal-input', (input) => {
+      stdin.write(input);
+    });
+
+    socket.on('disconnect', () => {
+      stdin.end();
+    });
+  } catch (error) {
+    console.error('Error attaching terminal:', error);
+    throw error;
+  }
+}
+
 module.exports = { 
   listContainers, 
   createContainer, 
   createAlpineContainer, 
   stopAndRemoveContainer, 
-  getContainerStatus, 
-  runCommandInContainer 
+  getContainerStatus,
+  attachTerminal 
 };

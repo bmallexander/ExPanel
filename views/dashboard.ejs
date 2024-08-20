@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Game Server Panel</title>
     <link href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" rel="stylesheet" />
 </head>
 <body>
     <div class="page">
@@ -114,6 +115,7 @@
                         <label for="command" class="form-label">Run Command</label>
                         <input type="text" class="form-control" id="command" name="command" placeholder="Enter command">
                     </div>
+                    <div id="terminal" style="height: 300px; border: 1px solid #ccc; border-radius: 4px;"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -124,6 +126,9 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/js/tabler.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const manageVPSModal = document.getElementById('manageVPSModal');
@@ -138,15 +143,34 @@
                         const managementOptions = document.getElementById('vps-management-options');
                         managementOptions.innerHTML = `
                             <form action="/vps/${vpsId}/power" method="POST" class="mb-3">
-                                <button type="submit" class="btn btn-warning">Restart VPS</button>
-                                <button type="submit" class="btn btn-danger" formaction="/vps/${vpsId}/power" formaction="/vps/${vpsId}/shutdown">Shutdown VPS</button>
+                                <button type="submit" class="btn btn-warning" name="action" value="restart">Restart VPS</button>
+                                <button type="submit" class="btn btn-danger" name="action" value="shutdown">Shutdown VPS</button>
                             </form>
                             <div>
                                 <p>Current Status: ${data.status}</p>
                             </div>
                         `;
                     });
-                
+
+                // Initialize terminal
+                const term = new Terminal();
+                const fitAddon = new FitAddon.FitAddon();
+                term.loadAddon(fitAddon);
+                term.open(document.getElementById('terminal'));
+                fitAddon.fit();
+
+                const socket = io();
+
+                socket.emit('attach-terminal', vpsId);
+
+                socket.on('terminal-output', (data) => {
+                    term.write(data);
+                });
+
+                term.onData(data => {
+                    socket.emit('terminal-input', data);
+                });
+
                 document.getElementById('run-command-btn').addEventListener('click', () => {
                     const command = document.getElementById('command').value;
                     fetch(`/vps/${vpsId}/run-command`, {

@@ -1,4 +1,6 @@
 const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
 const router = express.Router();
 const session = require('express-session');
 const passport = require('passport');
@@ -9,6 +11,9 @@ const dockerManager = require('./dockerManager');
 require('./auth');
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
@@ -145,25 +150,78 @@ router.post('/vps/:id/run-command', async (req, res) => {
     const vps = await VPS.findById(req.params.id);
     const container = dockerManager.getContainer(vps.containerId);
 
-    await container.exec({
+    const exec = await container.exec({
       Cmd: [command],
       AttachStdout: true,
       AttachStderr: true
-    }).start();
+    });
 
-    res.status(200).json({ success: true });
+    exec.start((err, stream) => {
+      if (err) {
+        console.error('Error starting exec:', err);
+        return res.status(500).json({ error: 'Internal Server Error' });
+      }
+
+      stream.on('data', data => {
+        // You might want to capture this output in a better way for real-time use
+        console.log('Command output:', data.toString());
+      });
+
+      res.status(200).json({ success: true });
+    });
+
   } catch (error) {
     console.error('Error running command on VPS:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
-module.exports = router;
-
 app.get('/', (req, res) => {
   res.render('index', { user: req.user });
 });
 
-app.listen(3000, () => {
+app.use('/', router);
+
+io.on('connection', (socket) => {
+  console.log('New client connected');
+
+  socket.on('attach-terminal', async (vpsId) => {
+    try {
+      const vps = await VPS.findById(vpsId);
+      const container = dockerManager.getContainer(vps.containerId);
+
+      const exec = await container.exec({
+        Cmd: ['sh'],
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: true
+      });
+
+      exec.start((err, stream) => {
+        if (err) {
+          console.error('Error starting exec:', err);
+          return;
+        }
+
+        socket.on('terminal-input', data => {
+          stream.write(data);
+        });
+
+        stream.on('data', data => {
+          socket.emit('terminal-output', data.toString());
+        });
+      });
+    } catch (error) {
+      console.error('Error attaching terminal:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
+
+server.listen(3000, () => {
   console.log('Server running on http://localhost:3000');
 });

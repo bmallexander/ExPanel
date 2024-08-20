@@ -187,5 +187,6 @@ module.exports = {
   getContainerStatus,
   attachTerminal,
   getContainer,
-  executeCommand  
+  executeCommand,
+  runCommandInContainer
 };

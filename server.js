@@ -112,8 +112,7 @@ app.post('/vps/remove', isAuthenticated, async (req, res) => {
 router.get('/vps/:id/manage', async (req, res) => {
   try {
     const vps = await VPS.findById(req.params.id);
-    // Fetch container status or other details
-    const container = dockerManager.getContainer(vps.containerId);
+    const container = dockerManager.getContainer(vps.containerId); // This should be a function returning the container
     const containerInfo = await container.inspect();
     
     res.json({ status: containerInfo.State.Status });
@@ -123,6 +122,45 @@ router.get('/vps/:id/manage', async (req, res) => {
   }
 });
 
+io.on('connection', (socket) => {
+  console.log('New client connected');
+
+  socket.on('attach-terminal', async (vpsId) => {
+    try {
+      const vps = await VPS.findById(vpsId);
+      const container = dockerManager.getContainer(vps.containerId); // This should be a function returning the container
+
+      const exec = await container.exec({
+        Cmd: ['sh'],
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: true
+      });
+
+      exec.start((err, stream) => {
+        if (err) {
+          console.error('Error starting exec:', err);
+          return;
+        }
+
+        socket.on('terminal-input', data => {
+          stream.write(data);
+        });
+
+        stream.on('data', data => {
+          socket.emit('terminal-output', data.toString());
+        });
+      });
+    } catch (error) {
+      console.error('Error attaching terminal:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
 // Route to restart or shutdown a VPS
 router.post('/vps/:id/power', async (req, res) => {
   const { action } = req.body; // action can be 'restart' or 'shutdown'

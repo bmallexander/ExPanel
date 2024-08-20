@@ -40,6 +40,16 @@ async function createContainer(imageName, containerName, hostPort = null, contai
   }
 }
 
+// Function to get a container by ID
+async function getContainer(containerId) {
+  try {
+    return docker.getContainer(containerId);
+  } catch (error) {
+    console.error('Error getting container:', error);
+    throw error;
+  }
+}
+
 // Create an Alpine-based container
 async function createAlpineContainer(containerName) {
   return await createContainer('alpine:latest', containerName);
@@ -139,5 +149,6 @@ module.exports = {
   createAlpineContainer, 
   stopAndRemoveContainer, 
   getContainerStatus,
-  attachTerminal 
+  attachTerminal,
+  getContainer
 };

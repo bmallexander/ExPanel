@@ -1,8 +1,6 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-
-const router = express.Router();
 const session = require('express-session');
 const passport = require('passport');
 const mongoose = require('mongoose');
@@ -13,7 +11,7 @@ require('./auth');
 
 const app = express();
 const server = http.createServer(app);
-const io = require('socket.io')(server);
+const io = socketIo(server);
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
@@ -30,13 +28,25 @@ app.use(session({
   saveUninitialized: false,
 }));
 
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Consolidated WebSocket connection handler
 io.on('connection', (socket) => {
   console.log('New client connected');
 
   socket.on('attach-terminal', async (vpsId) => {
     try {
       const vps = await VPS.findById(vpsId);
-      const exec = await dockerManager.executeCommand(vps.containerId, 'sh');
+      const container = dockerManager.getContainer(vps.containerId);
+
+      const exec = await container.exec({
+        Cmd: ['sh'],
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: true
+      });
 
       exec.start((err, stream) => {
         if (err) {
@@ -44,27 +54,34 @@ io.on('connection', (socket) => {
           return;
         }
 
-        // Handle incoming data from the container
-        stream.on('data', (data) => {
-          socket.emit('terminal-output', data.toString());
-        });
+        // Pipe container output to the socket
+        stream.pipe(socket);
 
-        // Handle end of stream
-        stream.on('end', () => {
-          console.log('Exec stream ended');
-        });
-
-        // Forward terminal input to the container
-        socket.on('terminal-input', (input) => {
-          exec.resize({ h: 40, w: 80 }); // Resize the terminal
-          exec.start({ Detach: false, Tty: true }, (err, execStream) => {
+        // Handle terminal input from the client
+        socket.on('terminal-input', (data) => {
+          exec.inspect((err, data) => {
             if (err) {
-              console.error('Error starting exec stream:', err);
+              console.error('Error inspecting exec:', err);
               return;
             }
 
-            execStream.write(input);
+            if (data.Tty) {
+              exec.start({ stdin: true }, (err, stream) => {
+                if (err) {
+                  console.error('Error starting exec stream:', err);
+                  return;
+                }
+
+                stream.write(data);
+              });
+            } else {
+              console.error('The exec instance is not a Tty terminal.');
+            }
           });
+        });
+
+        stream.on('end', () => {
+          console.log('Exec stream ended');
         });
       });
     } catch (error) {
@@ -77,10 +94,6 @@ io.on('connection', (socket) => {
   });
 });
 
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Routes for authentication
 app.get('/auth/discord', passport.authenticate('discord'));
 app.get('/auth/discord/callback', passport.authenticate('discord', {
   failureRedirect: '/',
@@ -111,22 +124,19 @@ app.post('/vps/create', isAuthenticated, async (req, res) => {
   if (os === 'alpine') {
     image = 'alpine:latest';
   } else {
-    // Default to a placeholder image or another image as needed
-    image = 'default-image:latest';
+    image = 'default-image:latest'; // Or another suitable default image
   }
 
   try {
-    // Create the container using the selected image
     const container = os === 'alpine' 
       ? await dockerManager.createAlpineContainer(name)
       : await dockerManager.createContainer(image, name);
 
-    // Save VPS details in the database
     const vps = new VPS({
       name,
-      os, // Store the OS for display
+      os, 
       image,
-      owner: req.user._id, // Make sure this field matches your schema
+      owner: req.user._id,
       containerId: container.id
     });
 
@@ -138,7 +148,6 @@ app.post('/vps/create', isAuthenticated, async (req, res) => {
   }
 });
 
-// Route to remove a VPS container
 app.post('/vps/remove', isAuthenticated, async (req, res) => {
   const { vpsId } = req.body;
 
@@ -156,63 +165,7 @@ app.post('/vps/remove', isAuthenticated, async (req, res) => {
   }
 });
 
-// Route to get management options for a VPS
-router.get('/vps/:id/manage', async (req, res) => {
-  try {
-    const vps = await VPS.findById(req.params.id);
-    const container = dockerManager.getContainer(vps.containerId);
-
-    // Correct usage of inspect
-    const containerInfo = await container.inspect();
-    
-    res.json({ status: containerInfo.State.Status });
-  } catch (error) {
-    console.error('Error fetching VPS management options:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-io.on('connection', (socket) => {
-  console.log('New client connected');
-
-  socket.on('attach-terminal', async (vpsId) => {
-    try {
-      const vps = await VPS.findById(vpsId);
-      const container = dockerManager.getContainer(vps.containerId); // This should be a function returning the container
-
-      const exec = await container.exec({
-        Cmd: ['sh'],
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-        Tty: true
-      });
-
-      exec.start((err, stream) => {
-        if (err) {
-          console.error('Error starting exec:', err);
-          return;
-        }
-
-        socket.on('terminal-input', data => {
-          stream.write(data);
-        });
-
-        stream.on('data', data => {
-          socket.emit('terminal-output', data.toString());
-        });
-      });
-    } catch (error) {
-      console.error('Error attaching terminal:', error);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
-  });
-});
-// Route to restart or shutdown a VPS
-router.post('/vps/:id/power', async (req, res) => {
+app.post('/vps/:id/power', isAuthenticated, async (req, res) => {
   const { action } = req.body; // action can be 'restart' or 'shutdown'
   try {
     const vps = await VPS.findById(req.params.id);
@@ -231,8 +184,7 @@ router.post('/vps/:id/power', async (req, res) => {
   }
 });
 
-// Route to run a command on a VPS
-router.post('/vps/:id/run-command', async (req, res) => {
+app.post('/vps/:id/run-command', isAuthenticated, async (req, res) => {
   const { command } = req.body;
   try {
     const vps = await VPS.findById(req.params.id);
@@ -251,7 +203,6 @@ router.post('/vps/:id/run-command', async (req, res) => {
       }
 
       stream.on('data', data => {
-        // You might want to capture this output in a better way for real-time use
         console.log('Command output:', data.toString());
       });
 
@@ -269,46 +220,6 @@ app.get('/', (req, res) => {
 });
 
 app.use('/', router);
-
-io.on('connection', (socket) => {
-  console.log('New client connected');
-
-  socket.on('attach-terminal', async (vpsId) => {
-    try {
-      const vps = await VPS.findById(vpsId);
-      const container = dockerManager.getContainer(vps.containerId);
-
-      const exec = await container.exec({
-        Cmd: ['sh'],
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-        Tty: true
-      });
-
-      exec.start((err, stream) => {
-        if (err) {
-          console.error('Error starting exec:', err);
-          return;
-        }
-
-        socket.on('terminal-input', data => {
-          stream.write(data);
-        });
-
-        stream.on('data', data => {
-          socket.emit('terminal-output', data.toString());
-        });
-      });
-    } catch (error) {
-      console.error('Error attaching terminal:', error);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
-  });
-});
 
 server.listen(3000, () => {
   console.log('Server running on http://localhost:3000');

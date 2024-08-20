@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+
 const router = express.Router();
 const session = require('express-session');
 const passport = require('passport');
@@ -12,7 +13,7 @@ require('./auth');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = require('socket.io')(server);
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
@@ -35,7 +36,6 @@ io.on('connection', (socket) => {
   socket.on('attach-terminal', async (vpsId) => {
     try {
       const vps = await VPS.findById(vpsId);
-      const container = dockerManager.getContainer(vps.containerId);
       const exec = await dockerManager.executeCommand(vps.containerId, 'sh');
 
       exec.start((err, stream) => {
@@ -44,16 +44,27 @@ io.on('connection', (socket) => {
           return;
         }
 
-        socket.on('terminal-input', data => {
-          stream.write(data);
-        });
-
-        stream.on('data', data => {
+        // Handle incoming data from the container
+        stream.on('data', (data) => {
           socket.emit('terminal-output', data.toString());
         });
 
+        // Handle end of stream
         stream.on('end', () => {
           console.log('Exec stream ended');
+        });
+
+        // Forward terminal input to the container
+        socket.on('terminal-input', (input) => {
+          exec.resize({ h: 40, w: 80 }); // Resize the terminal
+          exec.start({ Detach: false, Tty: true }, (err, execStream) => {
+            if (err) {
+              console.error('Error starting exec stream:', err);
+              return;
+            }
+
+            execStream.write(input);
+          });
         });
       });
     } catch (error) {

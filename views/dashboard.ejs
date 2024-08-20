@@ -54,7 +54,7 @@
                         <div class="card">
                             <div class="card-body">
                                 <h3 class="card-title"><%= vps.name %></h3>
-                                <p class="card-subtitle text-muted">Image: <%= vps.image %></p>
+                                <p class="card-subtitle text-muted">OS: <%= vps.os %></p> <!-- Show selected OS -->
                             </div>
                             <div class="card-footer">
                                 <form action="/vps/remove" method="POST" class="d-inline">
@@ -85,8 +85,11 @@
                             <input type="text" class="form-control" id="name" name="name" required>
                         </div>
                         <div class="mb-3">
-                            <label for="image" class="form-label">Docker Image</label>
-                            <input type="text" class="form-control" id="image" name="image" required>
+                            <label for="os" class="form-label">Select Operating System</label>
+                            <select class="form-select" id="os" name="os" required>
+                                <option value="alpine">Alpine</option>
+                                <!-- Add more options here if needed -->
+                            </select>
                         </div>
                     </div>
                     <div class="modal-footer">

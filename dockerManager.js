@@ -83,6 +83,12 @@ async function getContainerStatus(containerId) {
 async function attachTerminal(containerId, socket) {
   try {
     const container = docker.getContainer(containerId);
+    const containerInfo = await container.inspect();
+
+    // Check if the container is running
+    if (containerInfo.State.Status !== 'running') {
+      throw new Error('Container is not running');
+    }
 
     const exec = await container.exec({
       Cmd: ['sh'],
@@ -96,12 +102,15 @@ async function attachTerminal(containerId, socket) {
     exec.start({ Detach: false }, (err, stream) => {
       if (err) {
         console.error('Error starting exec:', err);
+        socket.emit('terminal-error', 'Failed to start terminal');
         return;
       }
 
       // Check if streams are available
       if (!stream || !stream.stdout || !stream.stderr || !stream.stdin) {
-        throw new Error('Streams are not available');
+        console.error('Error: Streams are not available');
+        socket.emit('terminal-error', 'Streams are not available');
+        return;
       }
 
       // Forward terminal output to the client
@@ -130,11 +139,12 @@ async function attachTerminal(containerId, socket) {
       // Handle stream errors
       stream.on('error', (err) => {
         console.error('Stream error:', err);
+        socket.emit('terminal-error', 'Stream error');
       });
     });
   } catch (error) {
     console.error('Error attaching terminal:', error);
-    throw error;
+    socket.emit('terminal-error', 'Error attaching terminal');
   }
 }
 

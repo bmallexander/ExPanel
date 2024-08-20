@@ -4,13 +4,16 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 
 passport.serializeUser((user, done) => {
-  done(null, user.id);
+    done(null, user.id);
 });
 
-passport.deserializeUser((id, done) => {
-  User.findById(id, (err, user) => {
-    done(err, user);
-  });
+passport.deserializeUser(async (id, done) => {
+    try {
+        const user = await User.findById(id); // Using async/await instead of callback
+        done(null, user);
+    } catch (err) {
+        done(err, null);
+    }
 });
 
 passport.use(new DiscordStrategy({

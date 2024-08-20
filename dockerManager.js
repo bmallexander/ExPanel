@@ -83,12 +83,6 @@ async function getContainerStatus(containerId) {
 async function attachTerminal(containerId, socket) {
   try {
     const container = docker.getContainer(containerId);
-    const containerInfo = await container.inspect();
-
-    // Check if the container is running
-    if (containerInfo.State.Status !== 'running') {
-      throw new Error('Container is not running');
-    }
 
     const exec = await container.exec({
       Cmd: ['sh'],
@@ -98,48 +92,45 @@ async function attachTerminal(containerId, socket) {
       Tty: true
     });
 
-    // Start the exec instance
     exec.start({ Detach: false }, (err, stream) => {
       if (err) {
         console.error('Error starting exec:', err);
-        socket.emit('terminal-error', 'Failed to start terminal');
+        socket.emit('terminal-error', 'Failed to start exec instance');
         return;
       }
 
-      // Check if streams are available
-      if (!stream || !stream.stdout || !stream.stderr || !stream.stdin) {
-        console.error('Error: Streams are not available');
-        socket.emit('terminal-error', 'Streams are not available');
-        return;
+      // Handle the `stdout` and `stderr` streams
+      if (stream) {
+        stream.on('data', (data) => {
+          socket.emit('terminal-output', data.toString());
+        });
+
+        stream.on('end', () => {
+          console.log('Exec stream ended');
+        });
+
+        stream.on('error', (err) => {
+          console.error('Stream error:', err);
+        });
+      } else {
+        console.error('No stream returned from exec start');
       }
-
-      // Forward terminal output to the client
-      stream.stdout.on('data', (data) => {
-        socket.emit('terminal-output', data.toString());
-      });
-
-      stream.stderr.on('data', (data) => {
-        socket.emit('terminal-output', data.toString());
-      });
 
       // Handle client input
       socket.on('terminal-input', (data) => {
-        if (stream.stdin) {
+        if (stream && stream.stdin) {
           stream.stdin.write(data);
         } else {
           console.error('Stream stdin is not available');
         }
       });
 
-      // Handle end of stream
-      stream.on('end', () => {
-        console.log('Exec stream ended');
-      });
-
-      // Handle stream errors
-      stream.on('error', (err) => {
-        console.error('Stream error:', err);
-        socket.emit('terminal-error', 'Stream error');
+      // Handle socket disconnection
+      socket.on('disconnect', () => {
+        console.log('Client disconnected');
+        if (stream) {
+          stream.destroy(); // Close the stream on client disconnect
+        }
       });
     });
   } catch (error) {

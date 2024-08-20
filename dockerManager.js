@@ -68,10 +68,39 @@ async function getContainerStatus(containerId) {
   }
 }
 
+// Run a command in a specific container
+async function runCommandInContainer(containerId, command) {
+  try {
+    const container = docker.getContainer(containerId);
+    const exec = await container.exec({
+      Cmd: [command],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+
+    const { Stdout, Stderr } = await exec.start();
+    let output = '';
+
+    Stdout.on('data', chunk => output += chunk.toString());
+    Stderr.on('data', chunk => output += chunk.toString());
+
+    await new Promise((resolve, reject) => {
+      Stdout.on('end', resolve);
+      Stderr.on('end', resolve);
+    });
+
+    return output;
+  } catch (error) {
+    console.error('Error running command in container:', error);
+    throw error;
+  }
+}
+
 module.exports = { 
   listContainers, 
   createContainer, 
   createAlpineContainer, 
   stopAndRemoveContainer, 
-  getContainerStatus 
+  getContainerStatus, 
+  runCommandInContainer 
 };

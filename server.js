@@ -103,6 +103,63 @@ app.post('/vps/remove', isAuthenticated, async (req, res) => {
   }
 });
 
+// Route to get management options for a VPS
+router.get('/vps/:id/manage', async (req, res) => {
+  try {
+    const vps = await VPS.findById(req.params.id);
+    // Fetch container status or other details
+    const container = dockerManager.getContainer(vps.containerId);
+    const containerInfo = await container.inspect();
+    
+    res.json({ status: containerInfo.State.Status });
+  } catch (error) {
+    console.error('Error fetching VPS management options:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// Route to restart or shutdown a VPS
+router.post('/vps/:id/power', async (req, res) => {
+  const { action } = req.body; // action can be 'restart' or 'shutdown'
+  try {
+    const vps = await VPS.findById(req.params.id);
+    const container = dockerManager.getContainer(vps.containerId);
+
+    if (action === 'restart') {
+      await container.restart();
+    } else if (action === 'shutdown') {
+      await container.stop();
+    }
+
+    res.redirect('/dashboard');
+  } catch (error) {
+    console.error('Error handling VPS power action:', error);
+    res.status(500).redirect('/dashboard?error=1');
+  }
+});
+
+// Route to run a command on a VPS
+router.post('/vps/:id/run-command', async (req, res) => {
+  const { command } = req.body;
+  try {
+    const vps = await VPS.findById(req.params.id);
+    const container = dockerManager.getContainer(vps.containerId);
+
+    await container.exec({
+      Cmd: [command],
+      AttachStdout: true,
+      AttachStderr: true
+    }).start();
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Error running command on VPS:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+module.exports = router;
+
 app.get('/', (req, res) => {
   res.render('index', { user: req.user });
 });

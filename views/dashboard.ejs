@@ -36,14 +36,10 @@
                 <div class="page-header d-print-none">
                     <div class="row align-items-center">
                         <div class="col">
-                            <h2 class="page-title">
-                                Your VPS Instances
-                            </h2>
+                            <h2 class="page-title">Your VPS Instances</h2>
                         </div>
                         <div class="col-auto">
-                            <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createVPSModal">
-                                Create New VPS
-                            </a>
+                            <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createVPSModal">Create New VPS</a>
                         </div>
                     </div>
                 </div>
@@ -54,9 +50,10 @@
                         <div class="card">
                             <div class="card-body">
                                 <h3 class="card-title"><%= vps.name %></h3>
-                                <p class="card-subtitle text-muted">OS: <%= vps.os %></p> <!-- Show selected OS -->
+                                <p class="card-subtitle text-muted">OS: <%= vps.os %></p>
                             </div>
                             <div class="card-footer">
+                                <a href="#" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#manageVPSModal" data-vps-id="<%= vps._id %>">Manage</a>
                                 <form action="/vps/remove" method="POST" class="d-inline">
                                     <input type="hidden" name="vpsId" value="<%= vps._id %>">
                                     <button type="submit" class="btn btn-danger">Remove</button>
@@ -101,6 +98,71 @@
         </div>
     </div>
 
+    <!-- Manage VPS Modal -->
+    <div class="modal modal-blur fade" id="manageVPSModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Manage VPS</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="vps-management-options">
+                        <!-- Content will be dynamically loaded based on selected VPS -->
+                    </div>
+                    <div class="mb-3">
+                        <label for="command" class="form-label">Run Command</label>
+                        <input type="text" class="form-control" id="command" name="command" placeholder="Enter command">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary ms-auto" id="run-command-btn">Run Command</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/js/tabler.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const manageVPSModal = document.getElementById('manageVPSModal');
+            manageVPSModal.addEventListener('show.bs.modal', event => {
+                const button = event.relatedTarget;
+                const vpsId = button.getAttribute('data-vps-id');
+
+                // Fetch management options for the VPS
+                fetch(`/vps/${vpsId}/manage`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const managementOptions = document.getElementById('vps-management-options');
+                        managementOptions.innerHTML = `
+                            <form action="/vps/${vpsId}/power" method="POST" class="mb-3">
+                                <button type="submit" class="btn btn-warning">Restart VPS</button>
+                                <button type="submit" class="btn btn-danger" formaction="/vps/${vpsId}/power" formaction="/vps/${vpsId}/shutdown">Shutdown VPS</button>
+                            </form>
+                            <div>
+                                <p>Current Status: ${data.status}</p>
+                            </div>
+                        `;
+                    });
+                
+                document.getElementById('run-command-btn').addEventListener('click', () => {
+                    const command = document.getElementById('command').value;
+                    fetch(`/vps/${vpsId}/run-command`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ command })
+                    }).then(response => {
+                        if (response.ok) {
+                            alert('Command executed successfully');
+                        } else {
+                            alert('Failed to execute command');
+                        }
+                    });
+                });
+            });
+        });
+    </script>
 </body>
 </html>

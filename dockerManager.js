@@ -111,7 +111,6 @@ async function runCommandInContainer(containerId, command) {
   }
 }
 
-// Attach a terminal to a container
 async function attachTerminal(containerId, socket) {
   try {
     const container = docker.getContainer(containerId);
@@ -126,7 +125,7 @@ async function attachTerminal(containerId, socket) {
     const stream = await exec.start({ Detach: false, Tty: true });
 
     // Ensure the stream supports stdin and stdout
-    if (stream && typeof stream.stdin === 'object' && typeof stream.stdout === 'object') {
+    if (stream && typeof stream.stdout === 'object' && typeof stream.stderr === 'object') {
       // Pipe data from the container to the socket
       stream.stdout.on('data', (data) => {
         socket.emit('terminal-output', data.toString());
@@ -138,17 +137,11 @@ async function attachTerminal(containerId, socket) {
 
       // Handle input from the web client
       socket.on('terminal-input', (input) => {
-        if (stream.stdin) {
-          stream.pipeline(input, stream.stdin, (err) => {
-            if (err) console.error(err);
-          });
-        } else {
-          console.error('stdin does not support writing');
-        }
+        stream.stdin.write(input);
       });
 
       socket.on('disconnect', () => {
-        if (stream.stdin) stream.stdin.end();
+        stream.stdin.end();
       });
     } else {
       console.error('Stream or stdin/stdout is not available');

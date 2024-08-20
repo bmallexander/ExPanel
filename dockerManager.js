@@ -1,7 +1,6 @@
-const { exec, execSync } = require('child_process');
-const { Writable } = require('stream');
 const Docker = require('dockerode');
 const docker = new Docker();
+const { exec } = require('child_process');
 
 // List all containers
 async function listContainers() {
@@ -80,43 +79,45 @@ async function getContainerStatus(containerId) {
   }
 }
 
-// Run a command in a specific container
-async function runCommandInContainer(containerId, command) {
-  try {
-    // Use Docker CLI to execute the command in the container
-    const result = execSync(`docker exec ${containerId} ${command}`, { encoding: 'utf8' });
-    return result;
-  } catch (error) {
-    console.error('Error running command in container:', error);
-    throw error;
-  }
-}
-
-// Attach a terminal using Docker CLI and `pty`
+// Attach a terminal to the container
 async function attachTerminal(containerId, socket) {
   try {
-    const cmd = `docker exec -it ${containerId} sh`;
+    const container = docker.getContainer(containerId);
+    const exec = await container.exec({
+      Cmd: ['sh'],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true
+    });
 
-    const terminal = exec(cmd, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const { stdin, stdout, stderr } = await exec.start({ Detach: false });
 
-    terminal.stdout.on('data', (data) => {
+    // Ensure the streams are valid
+    if (!stdin || !stdout) {
+      throw new Error('Streams are not available');
+    }
+
+    // Handle stdout and stderr streams
+    stdout.on('data', (data) => {
       socket.emit('terminal-output', data.toString());
     });
 
-    terminal.stderr.on('data', (data) => {
+    stderr.on('data', (data) => {
       socket.emit('terminal-output', data.toString());
     });
 
+    // Handle input from the web client
     socket.on('terminal-input', (input) => {
-      if (terminal.stdin) {
-        terminal.stdin.write(input);
+      if (stdin && typeof stdin.write === 'function') {
+        stdin.write(input);
       } else {
         console.error('stdin does not support writing or is not available');
       }
     });
 
     socket.on('disconnect', () => {
-      if (terminal.stdin) terminal.stdin.end();
+      if (stdin) stdin.end();
     });
   } catch (error) {
     console.error('Error attaching terminal:', error);
@@ -127,9 +128,31 @@ async function attachTerminal(containerId, socket) {
 // Function to execute a command in a container
 async function executeCommand(containerId, command) {
   try {
-    // Create exec instance and run the command using Docker CLI
-    const result = execSync(`docker exec ${containerId} ${command}`, { encoding: 'utf8' });
-    return result;
+    const container = docker.getContainer(containerId);
+    const exec = await container.exec({
+      Cmd: [command],
+      AttachStdin: false,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: false
+    });
+
+    const { Stdout, Stderr } = await exec.start();
+
+    let output = '';
+    if (Stdout) {
+      Stdout.on('data', chunk => output += chunk.toString());
+    }
+    if (Stderr) {
+      Stderr.on('data', chunk => output += chunk.toString());
+    }
+
+    await new Promise((resolve, reject) => {
+      if (Stdout) Stdout.on('end', resolve);
+      if (Stderr) Stderr.on('end', resolve);
+    });
+
+    return output;
   } catch (error) {
     console.error('Error executing command in container:', error);
     throw error;
@@ -144,6 +167,5 @@ module.exports = {
   getContainerStatus,
   attachTerminal,
   getContainer,
-  executeCommand,
-  runCommandInContainer
+  executeCommand
 };

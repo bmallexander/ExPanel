@@ -147,9 +147,7 @@ app.post('/vps/:id/run-command', isAuthenticated, async (req, res) => {
   const { command } = req.body;
   try {
     const vps = await VPS.findById(req.params.id);
-    const container = dockerManager.getContainer(vps.containerId);
-
-    const result = await dockerManager.runCommandInContainer(container.id, command);
+    const result = await dockerManager.runCommandInContainer(vps.containerId, command);
 
     console.log('Command output:', result);
     res.status(200).json({ success: true });

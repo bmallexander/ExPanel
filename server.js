@@ -51,7 +51,6 @@ app.get('/dashboard', isAuthenticated, async (req, res) => {
   }
 });
 
-// Route to create a new VPS container
 app.post('/vps/create', isAuthenticated, async (req, res) => {
   const { name, os } = req.body;
 
@@ -68,17 +67,17 @@ app.post('/vps/create', isAuthenticated, async (req, res) => {
     const container = os === 'alpine' 
       ? await dockerManager.createAlpineContainer(name)
       : await dockerManager.createContainer(image, name);
-    
+
     // Save VPS details in the database
     const vps = new VPS({
       name,
       os, // Store the OS for display
       image,
-      owner: req.user._id,
+      owner: req.user._id, // Make sure this field matches your schema
       containerId: container.id
     });
-    await vps.save();
 
+    await vps.save();
     res.redirect('/dashboard');
   } catch (error) {
     console.error('Error creating VPS:', error);

@@ -54,30 +54,13 @@ io.on('connection', (socket) => {
           return;
         }
 
-        // Pipe container output to the socket
-        stream.pipe(socket);
+        stream.on('data', (data) => {
+          socket.emit('terminal-output', data.toString());
+        });
 
-        // Handle terminal input from the client
         socket.on('terminal-input', (data) => {
-          exec.inspect((err, data) => {
-            if (err) {
-              console.error('Error inspecting exec:', err);
-              return;
-            }
-
-            if (data.Tty) {
-              exec.start({ stdin: true }, (err, stream) => {
-                if (err) {
-                  console.error('Error starting exec stream:', err);
-                  return;
-                }
-
-                stream.write(data);
-              });
-            } else {
-              console.error('The exec instance is not a Tty terminal.');
-            }
-          });
+          // Send input to the container
+          stream.write(data);
         });
 
         stream.on('end', () => {

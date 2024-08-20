@@ -84,6 +84,7 @@ async function attachTerminal(containerId, socket) {
   try {
     const container = docker.getContainer(containerId);
 
+    // Create an exec instance
     const exec = await container.exec({
       Cmd: ['sh'],
       AttachStdin: true,
@@ -99,37 +100,58 @@ async function attachTerminal(containerId, socket) {
         return;
       }
 
-      // Handle the `stdout` and `stderr` streams
-      if (stream) {
-        stream.on('data', (data) => {
-          socket.emit('terminal-output', data.toString());
-        });
-
-        stream.on('end', () => {
-          console.log('Exec stream ended');
-        });
-
-        stream.on('error', (err) => {
-          console.error('Stream error:', err);
-        });
-      } else {
+      if (!stream) {
         console.error('No stream returned from exec start');
+        socket.emit('terminal-error', 'Stream not available');
+        return;
       }
+
+      const { stdin, stdout, stderr } = stream;
+
+      if (!stdin || !stdout || !stderr) {
+        console.error('One or more streams are missing');
+        socket.emit('terminal-error', 'Stream components are missing');
+        return;
+      }
+
+      // Handle stdout and stderr
+      stdout.on('data', (data) => {
+        socket.emit('terminal-output', data.toString());
+      });
+
+      stderr.on('data', (data) => {
+        socket.emit('terminal-output', data.toString());
+      });
+
+      stdout.on('end', () => {
+        console.log('Exec stream ended');
+      });
+
+      stdout.on('error', (err) => {
+        console.error('stdout error:', err);
+      });
+
+      stderr.on('error', (err) => {
+        console.error('stderr error:', err);
+      });
 
       // Handle client input
       socket.on('terminal-input', (data) => {
-        if (stream && stream.stdin) {
-          stream.stdin.write(data);
+        if (stdin) {
+          stdin.write(data);
         } else {
-          console.error('Stream stdin is not available');
+          console.error('stdin is not available');
         }
       });
 
       // Handle socket disconnection
       socket.on('disconnect', () => {
         console.log('Client disconnected');
+        if (stdin) {
+          stdin.end(); // Properly close stdin
+        }
         if (stream) {
-          stream.destroy(); // Close the stream on client disconnect
+          stream.destroy(); // Close the stream
         }
       });
     });

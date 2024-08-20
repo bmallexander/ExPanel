@@ -38,48 +38,11 @@ io.on('connection', (socket) => {
   socket.on('attach-terminal', async (vpsId) => {
     try {
       const vps = await VPS.findById(vpsId);
-      const container = dockerManager.getContainer(vps.containerId);
-
-      // Create an exec instance
-      const exec = await container.exec({
-        Cmd: ['sh'],
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-        Tty: true
-      });
-
-      // Start the exec instance
-      exec.start({Detach: false}, (err, stream) => {
-        if (err) {
-          console.error('Error starting exec:', err);
-          return;
-        }
-
-        // Forward terminal output to the client
-        stream.on('data', (data) => {
-          socket.emit('terminal-output', data.toString());
-        });
-
-        // Handle client input
-        socket.on('terminal-input', (data) => {
-          if (stream.stdin) {
-            stream.stdin.write(data);
-          } else {
-            console.error('Stream stdin is not available');
-          }
-        });
-
-        // Handle end of stream
-        stream.on('end', () => {
-          console.log('Exec stream ended');
-        });
-
-        // Handle stream errors
-        stream.on('error', (err) => {
-          console.error('Stream error:', err);
-        });
-      });
+      if (!vps) {
+        console.error('VPS not found');
+        return;
+      }
+      await dockerManager.attachTerminal(vps.containerId, socket);
     } catch (error) {
       console.error('Error attaching terminal:', error);
     }
@@ -186,25 +149,10 @@ app.post('/vps/:id/run-command', isAuthenticated, async (req, res) => {
     const vps = await VPS.findById(req.params.id);
     const container = dockerManager.getContainer(vps.containerId);
 
-    const exec = await container.exec({
-      Cmd: [command],
-      AttachStdout: true,
-      AttachStderr: true
-    });
+    const result = await dockerManager.runCommandInContainer(container.id, command);
 
-    exec.start((err, stream) => {
-      if (err) {
-        console.error('Error starting exec:', err);
-        return res.status(500).json({ error: 'Internal Server Error' });
-      }
-
-      stream.on('data', data => {
-        console.log('Command output:', data.toString());
-      });
-
-      res.status(200).json({ success: true });
-    });
-
+    console.log('Command output:', result);
+    res.status(200).json({ success: true });
   } catch (error) {
     console.error('Error running command on VPS:', error);
     res.status(500).json({ error: 'Internal Server Error' });

@@ -1,6 +1,7 @@
+const { exec, execSync } = require('child_process');
+const { Writable } = require('stream');
 const Docker = require('dockerode');
 const docker = new Docker();
-const { Writable } = require('stream');
 
 // List all containers
 async function listContainers() {
@@ -13,13 +14,13 @@ async function listContainers() {
   }
 }
 
-// Create a new container (supports different images, including Alpine)
+// Create a new container
 async function createContainer(imageName, containerName, hostPort = null, containerPort = null) {
   try {
     const config = {
       Image: imageName,
       name: containerName,
-      Tty: true, // Keep the terminal open (useful for Alpine)
+      Tty: true, // Keep the terminal open
     };
 
     if (hostPort && containerPort) {
@@ -82,73 +83,40 @@ async function getContainerStatus(containerId) {
 // Run a command in a specific container
 async function runCommandInContainer(containerId, command) {
   try {
-    const container = docker.getContainer(containerId);
-    const exec = await container.exec({
-      Cmd: [command],
-      AttachStdout: true,
-      AttachStderr: true,
-    });
-
-    const { Stdout, Stderr } = await exec.start();
-
-    let output = '';
-    if (Stdout) {
-      Stdout.on('data', chunk => output += chunk.toString());
-    }
-    if (Stderr) {
-      Stderr.on('data', chunk => output += chunk.toString());
-    }
-
-    await new Promise((resolve, reject) => {
-      if (Stdout) Stdout.on('end', resolve);
-      if (Stderr) Stderr.on('end', resolve);
-    });
-
-    return output;
+    // Use Docker CLI to execute the command in the container
+    const result = execSync(`docker exec ${containerId} ${command}`, { encoding: 'utf8' });
+    return result;
   } catch (error) {
     console.error('Error running command in container:', error);
     throw error;
   }
 }
 
+// Attach a terminal using Docker CLI and `pty`
 async function attachTerminal(containerId, socket) {
   try {
-    const container = docker.getContainer(containerId);
-    const exec = await container.exec({
-      Cmd: ['sh'],
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      Tty: true,
-    });
+    const cmd = `docker exec -it ${containerId} sh`;
 
-    const { stdin, stdout, stderr } = await exec.start({ Detach: false, Tty: true });
+    const terminal = exec(cmd, { stdio: ['pipe', 'pipe', 'pipe'] });
 
-    // Ensure the streams are valid
-    if (!stdin || !stdout) {
-      throw new Error('Streams are not available');
-    }
-
-    // Handle stdout and stderr streams
-    stdout.on('data', (data) => {
+    terminal.stdout.on('data', (data) => {
       socket.emit('terminal-output', data.toString());
     });
 
-    stderr.on('data', (data) => {
+    terminal.stderr.on('data', (data) => {
       socket.emit('terminal-output', data.toString());
     });
 
-    // Handle input from the web client
     socket.on('terminal-input', (input) => {
-      if (stdin && typeof stdin.write === 'function') {
-        stdin.write(input);
+      if (terminal.stdin) {
+        terminal.stdin.write(input);
       } else {
         console.error('stdin does not support writing or is not available');
       }
     });
 
     socket.on('disconnect', () => {
-      if (stdin) stdin.end();
+      if (terminal.stdin) terminal.stdin.end();
     });
   } catch (error) {
     console.error('Error attaching terminal:', error);
@@ -156,25 +124,14 @@ async function attachTerminal(containerId, socket) {
   }
 }
 
-
-
 // Function to execute a command in a container
 async function executeCommand(containerId, command) {
   try {
-    const container = docker.getContainer(containerId);
-
-    // Create exec instance
-    const exec = await container.exec({
-      Cmd: [command],
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      Tty: true
-    });
-
-    return exec;
+    // Create exec instance and run the command using Docker CLI
+    const result = execSync(`docker exec ${containerId} ${command}`, { encoding: 'utf8' });
+    return result;
   } catch (error) {
-    console.error('Error creating exec instance:', error);
+    console.error('Error executing command in container:', error);
     throw error;
   }
 }

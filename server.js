@@ -29,6 +29,43 @@ app.use(session({
   saveUninitialized: false,
 }));
 
+io.on('connection', (socket) => {
+  console.log('New client connected');
+
+  socket.on('attach-terminal', async (vpsId) => {
+    try {
+      const vps = await VPS.findById(vpsId);
+      const container = dockerManager.getContainer(vps.containerId);
+      const exec = await dockerManager.executeCommand(vps.containerId, 'sh');
+
+      exec.start((err, stream) => {
+        if (err) {
+          console.error('Error starting exec:', err);
+          return;
+        }
+
+        socket.on('terminal-input', data => {
+          stream.write(data);
+        });
+
+        stream.on('data', data => {
+          socket.emit('terminal-output', data.toString());
+        });
+
+        stream.on('end', () => {
+          console.log('Exec stream ended');
+        });
+      });
+    } catch (error) {
+      console.error('Error attaching terminal:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
+
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -112,7 +149,9 @@ app.post('/vps/remove', isAuthenticated, async (req, res) => {
 router.get('/vps/:id/manage', async (req, res) => {
   try {
     const vps = await VPS.findById(req.params.id);
-    const container = dockerManager.getContainer(vps.containerId); // This should be a function returning the container
+    const container = dockerManager.getContainer(vps.containerId);
+
+    // Correct usage of inspect
     const containerInfo = await container.inspect();
     
     res.json({ status: containerInfo.State.Status });

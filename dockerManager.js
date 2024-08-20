@@ -41,7 +41,7 @@ async function createContainer(imageName, containerName, hostPort = null, contai
 }
 
 // Function to get a container by ID
-async function getContainer(containerId) {
+function getContainer(containerId) {
   try {
     return docker.getContainer(containerId);
   } catch (error) {
@@ -143,6 +143,27 @@ async function attachTerminal(containerId, socket) {
   }
 }
 
+// Function to execute a command in a container
+async function executeCommand(containerId, command) {
+  try {
+    const container = docker.getContainer(containerId);
+
+    // Create exec instance
+    const exec = await container.exec({
+      Cmd: [command],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true
+    });
+
+    return exec;
+  } catch (error) {
+    console.error('Error creating exec instance:', error);
+    throw error;
+  }
+}
+
 module.exports = { 
   listContainers, 
   createContainer, 
@@ -150,5 +171,6 @@ module.exports = {
   stopAndRemoveContainer, 
   getContainerStatus,
   attachTerminal,
-  getContainer
+  getContainer,
+  executeCommand
 };

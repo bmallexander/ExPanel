@@ -146,6 +146,7 @@ async function attachTerminal(containerId, socket) {
             }
           });
           writableStream.write(input);
+          writableStream.end();
         } else {
           console.error('stdin does not support writing');
         }

@@ -83,6 +83,7 @@ async function getContainerStatus(containerId) {
 async function attachTerminal(containerId, socket) {
   try {
     const container = docker.getContainer(containerId);
+
     const exec = await container.exec({
       Cmd: ['sh'],
       AttachStdin: true,
@@ -91,33 +92,45 @@ async function attachTerminal(containerId, socket) {
       Tty: true
     });
 
-    const { stdin, stdout, stderr } = await exec.start({ Detach: false });
-
-    // Ensure the streams are valid
-    if (!stdin || !stdout) {
-      throw new Error('Streams are not available');
-    }
-
-    // Handle stdout and stderr streams
-    stdout.on('data', (data) => {
-      socket.emit('terminal-output', data.toString());
-    });
-
-    stderr.on('data', (data) => {
-      socket.emit('terminal-output', data.toString());
-    });
-
-    // Handle input from the web client
-    socket.on('terminal-input', (input) => {
-      if (stdin && typeof stdin.write === 'function') {
-        stdin.write(input);
-      } else {
-        console.error('stdin does not support writing or is not available');
+    // Start the exec instance
+    exec.start({ Detach: false }, (err, stream) => {
+      if (err) {
+        console.error('Error starting exec:', err);
+        return;
       }
-    });
 
-    socket.on('disconnect', () => {
-      if (stdin) stdin.end();
+      // Check if streams are available
+      if (!stream || !stream.stdout || !stream.stderr || !stream.stdin) {
+        throw new Error('Streams are not available');
+      }
+
+      // Forward terminal output to the client
+      stream.stdout.on('data', (data) => {
+        socket.emit('terminal-output', data.toString());
+      });
+
+      stream.stderr.on('data', (data) => {
+        socket.emit('terminal-output', data.toString());
+      });
+
+      // Handle client input
+      socket.on('terminal-input', (data) => {
+        if (stream.stdin) {
+          stream.stdin.write(data);
+        } else {
+          console.error('Stream stdin is not available');
+        }
+      });
+
+      // Handle end of stream
+      stream.on('end', () => {
+        console.log('Exec stream ended');
+      });
+
+      // Handle stream errors
+      stream.on('error', (err) => {
+        console.error('Stream error:', err);
+      });
     });
   } catch (error) {
     console.error('Error attaching terminal:', error);

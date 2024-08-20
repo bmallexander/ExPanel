@@ -85,7 +85,7 @@ async function attachTerminal(containerId, socket) {
     const container = docker.getContainer(containerId);
 
     // Create an exec instance
-    const exec = await container.exec({
+    const execInstance = await container.exec({
       Cmd: ['sh'],
       AttachStdin: true,
       AttachStdout: true,
@@ -93,9 +93,9 @@ async function attachTerminal(containerId, socket) {
       Tty: true
     });
 
-    exec.start({ Detach: false }, (err, stream) => {
+    execInstance.start({ Detach: false }, (err, stream) => {
       if (err) {
-        console.error('Error starting exec:', err);
+        console.error('Error starting exec instance:', err);
         socket.emit('terminal-error', 'Failed to start exec instance');
         return;
       }
@@ -123,10 +123,7 @@ async function attachTerminal(containerId, socket) {
         socket.emit('terminal-output', data.toString());
       });
 
-      stdout.on('end', () => {
-        console.log('Exec stream ended');
-      });
-
+      // Error handling for streams
       stdout.on('error', (err) => {
         console.error('stdout error:', err);
       });
